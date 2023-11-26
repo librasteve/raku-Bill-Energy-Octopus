@@ -33,60 +33,54 @@ my regex date is export {
 
 
 ##### Anchors & N-lets
+class Singlets { ... }
+class Doublets { ... }
+
 class Anchors {
-    has @.lines;
+    has @!lines is built;
     has $.regex;
-    has $.type;
     has $.reverse;
     has $.dates;
-    has @!index;
-    has @!contents;
-    has $!loaded = False;
 
-    method loadme {
-        return if $!loaded;
-
-        my $i=0;
-        for @!lines -> $line {
-            if $line ~~ $.regex {
-                @!index.push($i);
-
-                given $.type {
-                    when 'singlets' {
-                        @!contents.push( ~$0 )
-                    }
-                    when 'couplets' {
-                        @!contents.push( ~$0 => ~$1 );
+    method list {
+        my @contents = gather {
+            for @!lines {
+                when $.regex {
+                    given self {
+                        when Singlets {
+                            take ~$0
+                        }
+                        when Doublets {
+                            take ~$0 => ~$1
+                        }
                     }
                 }
             }
-            $i++
         }
 
-        @!contents.=map(*.antipair) if $.reverse;
-        @!contents.=map({$_.key.&make-date => $_.value.&make-date}) if $.dates;
+        @contents.=map(*.antipair) if $.reverse;
+        @contents.=map({$_.key.&make-date => $_.value.&make-date}) if $.dates;
 
-        $!loaded = True;
+        @contents
     }
-
-    method index  { $.loadme; @!index    }
-    method list   { $.loadme; @!contents }
-    method hash   { (@.index Z=> @.list).Hash }
 }
+class Singlets is Anchors is export {}
+class Doublets is Anchors is export {}
 
-class Singlets is Anchors is export {
-    has $.type = 'singlets';
-}
+class TextBlock is export {
+    has @!lines is built;
+    has $.range;
 
-class Couplets is Anchors is export {
-    has $.type = 'couplets';
+    method list {
+        @!lines[|$.range].grep(*.so)
+    }
 }
 
 
 ##### Bill
 
+#| TODO - make singleton
 class Tariff {
-#    has Str      $.name = '';   #stub for now
     has FuelType $.fueltype is rw;
     has Rat()    $.kwh-rate is rw; #p/kWh
     has Rat()    $.day-rate is rw; #p/day
@@ -147,13 +141,14 @@ class Charge {
 
 class Invoice is export {
     has         %.info;
-    #    has Address $.address;     #stub for now
+    has  $.contact;
     has Charge  @.charges;
 
     submethod TWEAK {
         @!charges = Charge.new(:%!info) xx +%!info<charge-dates>;
-
         warn 'bad extract' unless @!charges>>.check.all.so;
+
+        $!contact = %!info<contact>;
     }
 
     method consumption {
