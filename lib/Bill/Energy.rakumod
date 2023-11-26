@@ -122,10 +122,10 @@ class Charge {
     }
 
     method check {
-        (@!dates[1] - @!dates[0]) == ($!day-count -  1)  &&    #dates are inclusive
-                (@!dates    & @!readtype    & @!readings) == 2   &&
-                ($!meter-id & $!kwh-used & $!day-count).so    &&
-                $!tariff.check
+        (@!dates[1] - @!dates[0]) == ($!day-count -  1) &&  #dates are inclusive
+        (@!dates & @!readtype & @!readings).elems == 2  &&  #these have 2 elems
+        ($!meter-id & $!kwh-used & $!day-count).so      &&  #these are set
+        $!tariff.check
     }
 
     method consumption {
