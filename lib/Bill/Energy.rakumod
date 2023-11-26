@@ -2,156 +2,166 @@ unit module Bill::Energy:ver<0.0.1>:auth<Steve Roe (librasteve@furnival.net)>;
 
 # Some standard classes for Energy Bills
 
-enum ReadingTypes = <Estimate Actual>;
-enum FuelTypes = <Electricity Gas>;
+use Data::Dump::Tree;
 
-class Tariff is export {
-    has $.fuel-type;
-    has $.fuel-units;
 
-    has $.currency = 'GBP';
-    has $.date-start;
-    has $.date-end;
-    has $.standing-period = 1;    #days
-    has $.standing-charge;
-    has $.unit-charge;
-}
+use DateTime::Parse;   #zef install librasteve fork / change to DateTime::Grammar
 
-class Meter is export {
-    has $.id;
-    has $.fuel-type;
-    has $.fuel-units;
-}
+##### Regexen & Types
+my @fueltype = <Gas Electricity>;
+my @readtype = <Estimated Customer>;
 
-class Reading is export {
-    has $.meter;
-    has $.date;
-    has $.value;
-    
-    method units-used {
-       $!meter-last - $!meter-first 
-    }
+my subset FuelType of Str where * ~~ @fueltype.any;
+my subset ReadType of Str where * ~~ @readtype.any;
 
-    method total-days {
-       $!date-last - $!date-first 
+my regex integer  is export { \d* }
+my regex decimal  is export { \d* \. \d* }
+my regex fueltype is export { @fueltype }
+my regex readtype is export { @readtype }
+
+sub make-date( $d ) {
+    given DateTime::Parse.new($d.trim, rule=> 'date') {
+        Date.new( |$_ )
     }
 }
-
-class Rating {
-
-
+my regex date is export {
+    <-[-)]>+                           #grab chars
+    <?{ make-date( ~$/ ) ~~ Date }>    #assert coerces to Date
 }
 
-class Charge is export {
-    has $.tariff;
-    has $.fuel-type;
 
-    has $.date-start;
-    has $.date-end;
+##### Anchors & N-lets
+class Anchors {
+    has @.lines;
+    has $.regex;
+    has $.type;
+    has $.reverse;
+    has $.dates;
+    has @!index;
+    has @!contents;
+    has $!loaded = False;
 
-    has $.sc-prorata;
+    method loadme {
+        return if $!loaded;
 
-    method amount {
+#        @!lines = Extract.new(:$file).text.lines;
 
+        my $i=0;
+        for @!lines -> $line {
+            if $line ~~ $.regex {
+                @!index.push($i);
+
+                given $.type {
+                    when 'singlets' {
+                        @!contents.push( ~$0 )
+                    }
+                    when 'couplets' {
+                        @!contents.push( ~$0 => ~$1 );
+                    }
+                }
+            }
+            $i++
+        }
+
+        @!contents.=map(*.antipair) if $.reverse;
+        @!contents.=map({$_.key.&make-date => $_.value.&make-date}) if $.dates;
+
+        $!loaded = True;
     }
+
+    method index  { $.loadme; @!index    }
+    method list   { $.loadme; @!contents }
+    method hash   { (@.index Z=> @.list).Hash }
 }
 
-class Bill::Energy is export {
-    has $.id;
+class Singlets is Anchors is export {
+    has $.type = 'singlets';
+}
 
-    has $.date-bill;
-    has $.period-start;
-    has $.period-end;
-
-    has $.name;
-    has $.address;
-    has @.charges;
-
-    method total-amount {
-        sum @!charges>>.amount
-    }
+class Couplets is Anchors is export {
+    has $.type = 'couplets';
 }
 
 
-#`[[
-class Address {
-    has $.street;
-    has $.city;
-    has $.post-code;
-}
+##### Bill
 
 class Tariff {
-    has $.name;
-    has $.rate;
+    has Str      $.name = '';   #stub for now
+#    has FuelType $.fueltype    is rw;
+    has  $.fueltype    is rw;
+    has Rat()    $.energy-rate is rw; #p/kWh
+    has Rat()    $.scday-rate  is rw; #p/day
 
-    method new($name, $rate) {
-        self.bless(:$name, :$rate);
+    method check {
+        ($!fueltype & $!energy-rate & $!scday-rate).so
     }
 }
 
-class MeterReading {
-    has $.date;
-    has $.value;
+class Charge {
+    has          %.pdf-info;
+    has Tariff   $.tariff handles<fueltype energy-rate scday-rate>;
+    has Date     @.dates;
+    has Str      $.meter-id;
+#    has ReadType @.readtype;
+    has  @.readtype;
+    has Rat()    @.readings;
+    has Rat()    $.energy-used;
+    has Int()    $.day-count;
+    has Rat      $.vat = <5/100>;
 
-    method new($date, $value) {
-        self.bless(:$date, :$value);
-    }
-}
+    method TWEAK {
+        my %p := %!pdf-info;
+        $!tariff = Tariff.new;
 
-class EnergyBill {
-    has Address $.address;
-    has Tariff $.electricity-tariff;
-    has Tariff $.gas-tariff;
-    has @.electricity-meter-readings;
-    has @.gas-meter-readings;
-
-    method add-electricity-reading($date, $value) {
-        my $reading = MeterReading.new(:$date, :$value);
-        @!electricity-meter-readings.push($reading);
-    }
-
-    method add-gas-reading($date, $value) {
-        my $reading = MeterReading.new(:$date, :$value);
-        @!gas-meter-readings.push($reading);
-    }
-
-    method calculate-electricity-cost() {
-        my $total-cost = 0;
-        for @!electricity-meter-readings -> $reading {
-            $total-cost += $reading.value * $.electricity-tariff.rate;
+        @!dates    = %p<charge-dates>.shift.kv;
+        $!meter-id = %p<meter-ids>.shift;
+        $.fueltype = %p<fueltypes>.shift;
+        for ^2 {
+            given %p<readings>.shift {
+                @!readtype.push: .key;
+                @!readings.push: .value;
+            }
         }
-        return $total-cost;
+        ($!energy-used, $.energy-rate) = %p<energy-uses>.shift.kv;
+        ($!day-count,   $.scday-rate ) = %p<standings>.shift.kv;
     }
 
-    method calculate-gas-cost() {
-        my $total-cost = 0;
-        for @!gas-meter-readings -> $reading {
-            $total-cost += $reading.value * $.gas-tariff.rate;
-        }
-        return $total-cost;
+    method check {
+        (@!dates[1] - @!dates[0]) == ($!day-count -  1)  &&    #dates are inclusive
+                (@!dates    & @!readtype    & @!readings) == 2   &&
+                ($!meter-id & $!energy-used & $!day-count).so    &&
+                $!tariff.check
     }
 
-    method generate-monthly-report() {
-        my $electricity-cost = self.calculate-electricity-cost();
-        my $gas-cost = self.calculate-gas-cost();
+    method consumption {
+        @!readings[1] - @!readings[0]
+    }
 
-        say "Monthly Energy Bill";
-        say "Address: $.address.street, $.address.city, $.address.postal-code";
-        say "Electricity Cost: \${$electricity-cost.fmt('%.2f')}";
-        say "Gas Cost: \${$gas-cost.fmt('%.2f')}";
-        say "Total Cost: \${($electricity-cost + $gas-cost).fmt('%.2f')}";
+    method total-charges {
+        ( ( $!energy-used * $.energy-rate ) + ($!day-count * $.scday-rate ) )
+                / 100
+                * (1 + $!vat)
     }
 }
 
-# Example Usage:
-my $address = Address.new(street => "123 Main St", city => "Cityville", postal-code => "12345");
-my $electricity-tariff = Tariff.new(name => "Standard Electricity", rate => 0.15);
-my $gas-tariff = Tariff.new(name => "Standard Gas", rate => 0.05);
+class Invoice is export {
+    has         %.pdf-info;
+    #    has Address $.address;     #stub for now
+    has Charge  @.charges;
 
-my $energy-bill = EnergyBill.new(address => $address, electricity-tariff => $electricity-tariff, gas-tariff => $gas-tariff);
+    submethod TWEAK {
+        @!charges = Charge.new(:%!pdf-info) xx +%!pdf-info<charge-dates>;
 
-$energy-bill.add-electricity-reading('2023-10-01', 1000);
-$energy-bill.add-gas-reading('2023-10-01', 50);
+        warn 'bad extract' unless @!charges>>.check.all.so;
+    }
 
-$energy-bill.generate-monthly-report();
-#]]
+    method consumption {
+        @!charges>>.consumption.sum.fmt( 'Total Consumption = %.2f kWh' )
+    }
+
+    method total-charges {
+        @!charges>>.total-charges.sum.fmt('Total Charges (incl.VAT) = %.2f');
+    }
+}
+
+
