@@ -1,31 +1,29 @@
 {
-  "name": "App::Crag",
-  "description": "calculator using raku grammars",
-  "version": "0.0.11",
+  "name": "Bill::Energy::Octopus",
+  "description": "Parse energy bill (invoice) from Octopus",
+  "version": "0.0.1",
   "perl": "6.d",
   "authors": [
     "librasteve"
   ],
   "auth": "zef:librasteve",
   "depends": [
-    "Physics::Measure",
-    "Physics::Constants",
-    "Physics::Navigation",
-    "Time::Duration::Parser"
+    "PDF::Extract",
+    "DateTime::Parse"
   ],
   "build-depends": [],
   "test-depends": [],
   "provides": {
-    "App::Crag": "lib/App/Crag.rakumod"
+    "Bill::Energy": "lib/Bill/Energy.rakumod"
   },
   "resources": [],
   "license": "Artistic-2.0",
   "tags": [
-    "App",
-    "CLI",
-    "Physics",
-    "Navigation"
+    "Bill",
+    "Invoice",
+    "Energy",
+    "Octopus"
   ],
   "api": "1",
-  "source-url": "git://github.com/librasteve/raku-App-Crag.git"
+  "source-url": "git://github.com/librasteve/raku-Bill-Energy-Octopus.git"
 }

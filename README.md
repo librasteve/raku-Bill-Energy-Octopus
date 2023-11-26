@@ -2,6 +2,10 @@
 
 # Bill::Energy::Octopus
 
+## Parse energy bill (invoice) from Octopus
+
+FIXME #zef install librasteve fork / change to DateTime::Grammar
+
 Your Charges In Detail
 
 Electricity
