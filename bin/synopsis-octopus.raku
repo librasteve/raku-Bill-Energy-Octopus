@@ -40,7 +40,7 @@ class StandingCharges is Couplets {
 
 ##### Make Invoice
 my $b = Invoice.new(
-    pdf-info => (
+    info => (
         charge-dates => ChargeDates.new(:@lines).list,
         meter-ids    => MeterIDs.new(:@lines).list,
         fueltypes    => FuelTypes.new(:@lines).list,

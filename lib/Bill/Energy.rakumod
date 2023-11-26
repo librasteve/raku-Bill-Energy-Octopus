@@ -2,8 +2,7 @@ unit module Bill::Energy:ver<0.0.1>:auth<Steve Roe (librasteve@furnival.net)>;
 
 # Some standard classes for Energy Bills
 
-use Data::Dump::Tree;
-
+use Data::Dump::Tree;   #debug
 
 use DateTime::Parse;   #zef install librasteve fork / change to DateTime::Grammar
 
@@ -11,8 +10,11 @@ use DateTime::Parse;   #zef install librasteve fork / change to DateTime::Gramma
 my @fueltype = <Gas Electricity>;
 my @readtype = <Estimated Customer>;
 
-my subset FuelType of Str where * ~~ @fueltype.any;
-my subset ReadType of Str where * ~~ @readtype.any;
+my $fj = @fueltype.any;     #\   make Junctions for subset check
+my $rj = @fueltype.any;     #/    (workaround)
+
+my subset FuelType of Str where * ~~ $fj;
+my subset ReadType of Str where * ~~ $rj;
 
 my regex integer  is export { \d* }
 my regex decimal  is export { \d* \. \d* }
@@ -43,8 +45,6 @@ class Anchors {
 
     method loadme {
         return if $!loaded;
-
-#        @!lines = Extract.new(:$file).text.lines;
 
         my $i=0;
         for @!lines -> $line {
@@ -86,50 +86,51 @@ class Couplets is Anchors is export {
 ##### Bill
 
 class Tariff {
-    has Str      $.name = '';   #stub for now
-#    has FuelType $.fueltype    is rw;
-    has  $.fueltype    is rw;
-    has Rat()    $.energy-rate is rw; #p/kWh
-    has Rat()    $.scday-rate  is rw; #p/day
+#    has Str      $.name = '';   #stub for now
+    has FuelType $.fueltype is rw;
+    has Rat()    $.kwh-rate is rw; #p/kWh
+    has Rat()    $.day-rate is rw; #p/day
 
     method check {
-        ($!fueltype & $!energy-rate & $!scday-rate).so
+        ($!fueltype & $!kwh-rate & $!day-rate).so
     }
 }
 
 class Charge {
-    has          %.pdf-info;
-    has Tariff   $.tariff handles<fueltype energy-rate scday-rate>;
+    has          %.info;
+    has Tariff   $.tariff handles<fueltype kwh-rate day-rate>;
     has Date     @.dates;
     has Str      $.meter-id;
-#    has ReadType @.readtype;
-    has  @.readtype;
+    has ReadType @.readtype;
     has Rat()    @.readings;
-    has Rat()    $.energy-used;
+    has Rat()    $.kwh-used;
     has Int()    $.day-count;
     has Rat      $.vat = <5/100>;
 
     method TWEAK {
-        my %p := %!pdf-info;
-        $!tariff = Tariff.new;
+        my %i := %!info;
 
-        @!dates    = %p<charge-dates>.shift.kv;
-        $!meter-id = %p<meter-ids>.shift;
-        $.fueltype = %p<fueltypes>.shift;
+        my ($fueltype, $kwh-rate, $day-rate);
+
+        @!dates    = %i<charge-dates>.shift.kv;
+        $!meter-id = %i<meter-ids>.shift;
+        $fueltype  = %i<fueltypes>.shift;
         for ^2 {
-            given %p<readings>.shift {
+            given %i<readings>.shift {
                 @!readtype.push: .key;
                 @!readings.push: .value;
             }
         }
-        ($!energy-used, $.energy-rate) = %p<energy-uses>.shift.kv;
-        ($!day-count,   $.scday-rate ) = %p<standings>.shift.kv;
+        ($!kwh-used,  $kwh-rate) = %i<energy-uses>.shift.kv;
+        ($!day-count, $day-rate) = %i<standings>.shift.kv;
+
+        $!tariff = Tariff.new(:$fueltype, :$kwh-rate, :$day-rate);
     }
 
     method check {
         (@!dates[1] - @!dates[0]) == ($!day-count -  1)  &&    #dates are inclusive
                 (@!dates    & @!readtype    & @!readings) == 2   &&
-                ($!meter-id & $!energy-used & $!day-count).so    &&
+                ($!meter-id & $!kwh-used & $!day-count).so    &&
                 $!tariff.check
     }
 
@@ -138,19 +139,19 @@ class Charge {
     }
 
     method total-charges {
-        ( ( $!energy-used * $.energy-rate ) + ($!day-count * $.scday-rate ) )
+        ( ($!kwh-used * $.kwh-rate ) + ($!day-count * $.day-rate ) )
                 / 100
                 * (1 + $!vat)
     }
 }
 
 class Invoice is export {
-    has         %.pdf-info;
+    has         %.info;
     #    has Address $.address;     #stub for now
     has Charge  @.charges;
 
     submethod TWEAK {
-        @!charges = Charge.new(:%!pdf-info) xx +%!pdf-info<charge-dates>;
+        @!charges = Charge.new(:%!info) xx +%!info<charge-dates>;
 
         warn 'bad extract' unless @!charges>>.check.all.so;
     }
